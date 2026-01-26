@@ -39,7 +39,7 @@ async function fixWebmDuration(blob, duration) {
  */
 function injectDuration(buffer, durationMs) {
     const bytes = new Uint8Array(buffer);
-    const durationSec = durationMs / 1000;
+    const durationNs = durationMs * 1000000;
     
     // Find the Info element (0x1549A966) which contains Duration
     const infoElementId = [0x15, 0x49, 0xA9, 0x66];
@@ -60,6 +60,19 @@ function injectDuration(buffer, durationMs) {
     const infoContentStart = pos;
     const infoContentEnd = pos + infoSize.value;
     
+    // Look for existing TimecodeScale (TimestampScale) to compute duration in ticks
+    const timecodeScaleElementId = [0x2A, 0xD7, 0xB1];
+    let timecodeScale = 1000000;
+    const timecodeScalePos = findElement(bytes, timecodeScaleElementId, infoContentStart, infoContentEnd);
+    if (timecodeScalePos !== -1) {
+        let tPos = timecodeScalePos + 3; // Skip element ID
+        const tSize = readVint(bytes, tPos);
+        tPos += tSize.length;
+        timecodeScale = readUint(bytes, tPos, tSize.value);
+    }
+
+    const durationTicks = durationNs / timecodeScale;
+
     // Look for existing Duration element
     let durationPos = findElement(bytes, durationElementId, infoContentStart, infoContentEnd);
     
@@ -71,7 +84,7 @@ function injectDuration(buffer, durationMs) {
 
         if (dSize.value === 8) {
             // Write the new duration as float64
-            const durationFloat = new Float64Array([durationSec]);
+            const durationFloat = new Float64Array([durationTicks]);
             const durationBytes = new Uint8Array(durationFloat.buffer);
             for (let i = 0; i < 8; i++) {
                 bytes[dPos + i] = durationBytes[7 - i];
@@ -81,7 +94,7 @@ function injectDuration(buffer, durationMs) {
 
         if (dSize.value === 4) {
             // Write the new duration as float32
-            const durationFloat = new Float32Array([durationSec]);
+            const durationFloat = new Float32Array([durationTicks]);
             const durationBytes = new Uint8Array(durationFloat.buffer);
             for (let i = 0; i < 4; i++) {
                 bytes[dPos + i] = durationBytes[3 - i];
@@ -104,7 +117,7 @@ function injectDuration(buffer, durationMs) {
     durationElement[2] = 0x88; // Size: 8 bytes (VINT)
     
     // Float64 big-endian
-    const durationFloat = new Float64Array([durationSec]);
+    const durationFloat = new Float64Array([durationTicks]);
     const durationBytes = new Uint8Array(durationFloat.buffer);
     for (let i = 0; i < 8; i++) {
         durationElement[3 + i] = durationBytes[7 - i];
@@ -182,6 +195,17 @@ function readVint(bytes, pos) {
     }
     
     return { value, length };
+}
+
+/**
+ * Read an unsigned integer (big-endian) with a given byte length
+ */
+function readUint(bytes, pos, length) {
+    let value = 0;
+    for (let i = 0; i < length; i++) {
+        value = (value << 8) | bytes[pos + i];
+    }
+    return value;
 }
 
 /**

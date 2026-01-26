@@ -284,17 +284,33 @@ Serve the frontend application with proper cache control headers.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AUTH_TOKEN` | Optional auth token for uploads | none (public) |
+| `LOGIN_PASSWORD` | Password for web login | none (no auth) |
+| `AUTH_TOKEN` | Optional API auth token for uploads | none (public) |
 
-To enable auth, add to deployment:
-```yaml
-env:
-- name: AUTH_TOKEN
-  valueFrom:
-    secretKeyRef:
-      name: recorder-secrets
-      key: auth-token
-```
+### Setting Up Password Authentication
+
+1. **Create the Kubernetes secret:**
+
+   **PowerShell (Windows):**
+   ```powershell
+   kubectl create secret generic recorder-auth `
+     -n video-recorder `
+     --from-literal=login-password=YourSecurePassword
+   ```
+
+   **Bash (Linux/Mac):**
+   ```bash
+   kubectl create secret generic recorder-auth \
+     -n video-recorder \
+     --from-literal=login-password=YourSecurePassword
+   ```
+
+2. **Restart the deployment:**
+   ```bash
+   kubectl rollout restart deployment/video-recorder -n video-recorder
+   ```
+
+3. **Access the app** - You'll be redirected to a login page
 
 ### Resource Limits
 

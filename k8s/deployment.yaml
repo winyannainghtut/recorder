@@ -26,6 +26,14 @@ spec:
         image: winyannainghtut/recorder:latest
         imagePullPolicy: Always
 
+        # Environment variables
+        env:
+        - name: LOGIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: recorder-auth
+              key: login-password
+
         # Resource limits - increased for large file handling
         resources:
           requests:

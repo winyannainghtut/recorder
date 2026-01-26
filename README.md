@@ -18,6 +18,8 @@ A lightweight, production-ready screen recording web application designed for Ku
 
 ## Quick Start
 
+**For detailed step-by-step instructions, see [HOWTOUSE.md](HOWTOUSE.md)**
+
 ```bash
 # 1. Clone and push to your GitHub repo
 git clone <this-repo>
@@ -28,8 +30,9 @@ cd recorder
 # 3. Push to trigger Docker build
 git push origin main
 
-# 4. Deploy to Kubernetes
+# 4. Create secrets and deploy to Kubernetes
 kubectl apply -f k8s/namespace.yaml
+kubectl create secret generic recorder-auth -n video-recorder --from-literal=login-password=YourPassword
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 
@@ -109,6 +112,7 @@ recorder/
 │       └── docker-push.yml   # CI/CD pipeline
 ├── Dockerfile           # Multi-stage build
 ├── .dockerignore        # Docker ignore file
+├── HOWTOUSE.md              # Complete setup guide (START HERE!)
 ├── CLOUDFLARE_TUNNEL_SETUP.md  # Tunnel setup guide
 ├── GITHUB_ACTIONS_SETUP.md     # CI/CD setup guide
 └── README.md           # This file

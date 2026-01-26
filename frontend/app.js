@@ -1,5 +1,5 @@
 // Screen Recorder Configuration
-// Version: 3.0 - SCREEN RECORDING ONLY - NO CAMERA
+// Version: 3.1 - SCREEN RECORDING WITH DIRECT DOWNLOAD OPTION
 // UNIQUE_MARKER_2026_01_26_SCREEN_RECORD
 const MAX_RECORDING_DURATION = 3 * 60 * 60 * 1000; // 3 hours
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
@@ -154,6 +154,13 @@ async function startRecording() {
             recordedVideo.src = URL.createObjectURL(blob);
             liveVideo.style.display = 'none';
             recordedVideo.style.display = 'block';
+            
+            // Show file size
+            const fileSizeDisplay = document.getElementById('fileSizeDisplay');
+            if (fileSizeDisplay) {
+                fileSizeDisplay.textContent = `Recording size: ${formatBytes(blob.size)}`;
+            }
+            
             setState('stopped');
             stopStream();
         };
@@ -211,6 +218,28 @@ function formatBytes(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Direct download (no server upload)
+function directDownload() {
+    if (!currentBlob) {
+        showMessage('No recording to download', 'error');
+        return;
+    }
+
+    // Create download link
+    const url = URL.createObjectURL(currentBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `recording_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    // Clean up the URL after a short delay
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    
+    showMessage('Download started!', 'success');
 }
 
 // Upload recording
@@ -281,6 +310,7 @@ document.getElementById('recordAgainBtn').addEventListener('click', () => {
     recordedVideo.style.display = 'none';
     setState('idle');
 });
+document.getElementById('directDownloadBtn').addEventListener('click', directDownload);
 document.getElementById('uploadBtn').addEventListener('click', uploadRecording);
 document.getElementById('deleteBtn').addEventListener('click', deleteRecording);
 document.getElementById('resetBtn').addEventListener('click', reset);

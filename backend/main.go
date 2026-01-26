@@ -141,6 +141,16 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		path = "/index.html"
 	}
 
+	// Set cache control headers to prevent CDN caching issues
+	// For JS/CSS files, prevent caching to ensure updates are served immediately
+	if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+	} else if strings.HasSuffix(path, ".html") {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+	}
+
 	// Serve from embedded frontend directory
 	filePath := filepath.Join("/app/frontend", path)
 	http.ServeFile(w, r, filePath)

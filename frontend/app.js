@@ -64,19 +64,33 @@ function injectDuration(buffer, durationMs) {
     let durationPos = findElement(bytes, durationElementId, infoContentStart, infoContentEnd);
     
     if (durationPos !== -1) {
-        // Duration exists, update it
+        // Duration exists, update it in-place when possible
         let dPos = durationPos + 2; // Skip element ID
         const dSize = readVint(bytes, dPos);
         dPos += dSize.length;
-        
-        // Write the new duration as float64
-        const durationFloat = new Float64Array([durationSec]);
-        const durationBytes = new Uint8Array(durationFloat.buffer);
-        // Reverse for big-endian
-        for (let i = 0; i < 8; i++) {
-            bytes[dPos + i] = durationBytes[7 - i];
+
+        if (dSize.value === 8) {
+            // Write the new duration as float64
+            const durationFloat = new Float64Array([durationSec]);
+            const durationBytes = new Uint8Array(durationFloat.buffer);
+            for (let i = 0; i < 8; i++) {
+                bytes[dPos + i] = durationBytes[7 - i];
+            }
+            return bytes.buffer;
         }
-        return bytes.buffer;
+
+        if (dSize.value === 4) {
+            // Write the new duration as float32
+            const durationFloat = new Float32Array([durationSec]);
+            const durationBytes = new Uint8Array(durationFloat.buffer);
+            for (let i = 0; i < 4; i++) {
+                bytes[dPos + i] = durationBytes[3 - i];
+            }
+            return bytes.buffer;
+        }
+
+        // Fallback: treat as missing and insert a new 8-byte duration element
+        durationPos = -1;
     }
     
     // Duration doesn't exist, we need to insert it

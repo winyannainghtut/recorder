@@ -438,10 +438,18 @@ https://recorder.yourdomain.com
 2. Select what to share (screen, window, or tab)
 3. Record for a few seconds
 4. Click "Stop Recording"
-5. Preview the recording
-6. Click "Upload for Download"
-7. Click "Download Video"
-8. Verify the file downloads correctly
+5. Preview the recording (you'll see the file size displayed)
+6. Choose download method:
+   - **"Download Now"** (green button) - Instantly downloads to your computer, no server upload
+   - **"Upload for Link"** (blue button) - Uploads to server, gives you a shareable one-time link
+7. Verify the file downloads correctly
+
+**When to use each option:**
+
+| Option | Use When |
+|--------|----------|
+| Download Now | You just want to save the file locally, no sharing needed |
+| Upload for Link | You want a shareable link (e.g., to send to someone else) |
 
 ### 8.4 Test API Endpoints
 

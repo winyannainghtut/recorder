@@ -7,9 +7,12 @@ A lightweight, production-ready screen recording web application designed for Ku
 - **Browser-based screen capture** using getDisplayMedia API
 - **Record entire screen, window, or browser tab** with optional audio
 - **Support for long recordings** - up to 3 hours, 2GB file size
+- **Two download options:**
+  - **Download Now** - instant direct download (no server upload)
+  - **Upload for Link** - get a shareable one-time download link
 - **Password-protected access** - simple login page with session-based auth
-- **One-time download** - recordings are deleted immediately after download
-- **Auto-expiration** - recordings expire after 1 hour
+- **One-time download links** - server-uploaded recordings deleted after download
+- **Auto-expiration** - uploaded recordings expire after 1 hour
 - **Zero persistence** - no database, no PVC, temporary storage only
 - **Ultra-lightweight** - optimized for 128-256Mi memory usage
 - **Secure tokens** - cryptographically secure one-time download tokens
@@ -206,15 +209,17 @@ service/video-recorder  ClusterIP   10.96.xxx.xxx   8080/TCP
 ### Step 5: Test the Application
 
 1. Open your configured domain (e.g., `https://recorder.yourdomain.com`)
-2. Click "Start Recording"
-3. Select what to share: entire screen, application window, or browser tab
-4. Optionally enable audio capture (system audio and/or microphone)
-5. Record your screen (max 3 hours)
-6. Click "Stop Recording" or stop sharing via browser UI
-7. Preview the recording
-8. Click "Upload for Download"
-9. Click "Download Video" to save locally
-10. File is auto-deleted after download
+2. Enter your password to login
+3. Click "Start Recording"
+4. Select what to share: entire screen, application window, or browser tab
+5. Optionally enable audio capture (system audio and/or microphone)
+6. Record your screen (max 3 hours)
+7. Click "Stop Recording" or stop sharing via browser UI
+8. Preview the recording
+9. Choose download method:
+   - **"Download Now"** - Instantly saves to your computer (no upload)
+   - **"Upload for Link"** - Uploads to server, gives you a shareable link
+10. If using "Upload for Link", click "Download Video" to save locally
 
 ## API Endpoints
 

@@ -7,6 +7,7 @@ A lightweight, production-ready screen recording web application designed for Ku
 - **Browser-based screen capture** using getDisplayMedia API
 - **Record entire screen, window, or browser tab** with optional audio
 - **Support for long recordings** - up to 3 hours, 2GB file size
+- **Password-protected access** - simple login page with session-based auth
 - **One-time download** - recordings are deleted immediately after download
 - **Auto-expiration** - recordings expire after 1 hour
 - **Zero persistence** - no database, no PVC, temporary storage only
@@ -90,11 +91,12 @@ This ensures that code updates are served immediately without CDN cache purging.
 ```
 recorder/
 ├── backend/
-│   ├── main.go          # Go backend server
+│   ├── main.go          # Go backend server (with auth)
 │   ├── go.mod           # Go dependencies
 │   └── go.sum           # Dependency checksums
 ├── frontend/
 │   ├── index.html       # Main HTML page
+│   ├── login.html       # Login page
 │   ├── styles.css       # Styling
 │   └── app.js           # Screen recording logic (getDisplayMedia)
 ├── k8s/
@@ -268,6 +270,38 @@ OK
 ### GET /
 
 Serve the frontend application with proper cache control headers.
+Redirects to `/login` if not authenticated.
+
+### POST /auth/login
+
+Authenticate with password.
+
+**Request:**
+```json
+{
+  "password": "your-password"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true
+}
+```
+
+Sets a secure HTTP-only session cookie valid for 24 hours.
+
+**Error Responses:**
+- `401 Unauthorized` - Invalid password
+
+### GET /auth/logout
+
+Clear session and redirect to login page.
+
+### GET /login
+
+Serve the login page. Redirects to `/` if already authenticated.
 
 ## Configuration
 
@@ -339,15 +373,19 @@ volumes:
 
 ### Implemented
 
-1. **One-time tokens** - Downloads expire after first use
-2. **TTL-based expiration** - Auto-delete after 1 hour
-3. **File type validation** - Only accepts video content
-4. **Size limits** - Max 2GB upload
-5. **Rate limiting** - 10 uploads per minute per IP
-6. **Non-root container** - Runs as UID 65532
-7. **Dropped capabilities** - Minimal container privileges
-8. **Cache control headers** - Prevent sensitive data caching
-9. **Cloudflare protection** - DDoS protection, WAF, automatic HTTPS
+1. **Password authentication** - Login required to access the app
+2. **Secure sessions** - HttpOnly, Secure, SameSite=Strict cookies
+3. **Session expiration** - Sessions expire after 24 hours
+4. **Constant-time password comparison** - Prevents timing attacks
+5. **One-time tokens** - Downloads expire after first use
+6. **TTL-based expiration** - Auto-delete after 1 hour
+7. **File type validation** - Only accepts video content
+8. **Size limits** - Max 2GB upload
+9. **Rate limiting** - 10 uploads per minute per IP
+10. **Non-root container** - Runs as UID 65532
+11. **Dropped capabilities** - Minimal container privileges
+12. **Cache control headers** - Prevent sensitive data caching
+13. **Cloudflare protection** - DDoS protection, WAF, automatic HTTPS
 
 ### Recommendations for Production
 

@@ -76,14 +76,30 @@ kubectl create secret generic cloudflare-tunnel-token \
   --from-literal=token=<YOUR_TUNNEL_TOKEN>
 ```
 
-### 2.3 Deploy the screen recorder app
+### 2.3 Create the authentication secret
+
+```powershell
+# PowerShell (Windows)
+kubectl create secret generic recorder-auth `
+  -n video-recorder `
+  --from-literal=login-password=YourSecurePassword
+```
+
+```bash
+# Bash (Linux/Mac)
+kubectl create secret generic recorder-auth \
+  -n video-recorder \
+  --from-literal=login-password=YourSecurePassword
+```
+
+### 2.4 Deploy the screen recorder app
 
 ```bash
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 ```
 
-### 2.4 Deploy Cloudflare Tunnel connector
+### 2.5 Deploy Cloudflare Tunnel connector
 
 ```bash
 kubectl apply -f k8s/cloudflare-tunnel.yaml
@@ -129,7 +145,9 @@ Open your browser and go to:
 https://recorder.yourdomain.com
 ```
 
-Your video recorder should now be accessible via HTTPS!
+You'll be redirected to a **login page**. Enter the password you configured in the `recorder-auth` secret.
+
+After successful login, you'll have access to the screen recorder for 24 hours.
 
 ## Architecture
 

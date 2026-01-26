@@ -1,0 +1,35 @@
+# Binaries
+recorder
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment
+.env
+.env.*
+*.log
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/

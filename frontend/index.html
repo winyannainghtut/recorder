@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Recorder</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Web Screen Recorder</h1>
+            <p class="subtitle">Record your screen, upload, download - temporary storage only</p>
+        </header>
+
+        <div class="video-section">
+            <div class="video-container">
+                <video id="liveVideo" autoplay muted playsinline></video>
+                <video id="recordedVideo" controls></video>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div id="idleControls" class="control-group">
+                <button id="startBtn" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="12" r="10"/>
+                    </svg>
+                    Start Recording
+                </button>
+            </div>
+
+            <div id="recordingControls" class="control-group hidden">
+                <div class="timer">
+                    <span id="timerDisplay">00:00</span>
+                </div>
+                <button id="stopBtn" class="btn btn-danger">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    </svg>
+                    Stop Recording
+                </button>
+            </div>
+
+            <div id="previewControls" class="control-group hidden">
+                <button id="recordAgainBtn" class="btn btn-secondary">
+                    Record Again
+                </button>
+                <button id="uploadBtn" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17,8 12,3 7,8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Upload for Download
+                </button>
+            </div>
+
+            <div id="uploadingControls" class="control-group hidden">
+                <div class="progress">
+                    <div class="spinner"></div>
+                    <span>Uploading...</span>
+                </div>
+            </div>
+
+            <div id="downloadControls" class="control-group hidden">
+                <div class="info">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    <span>Secure one-time download ready</span>
+                </div>
+                <a id="downloadLink" class="btn btn-success" href="#">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7,10 12,15 17,10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download Video
+                </a>
+                <button id="deleteBtn" class="btn btn-danger-small">
+                    Delete
+                </button>
+            </div>
+
+            <div id="expiredControls" class="control-group hidden">
+                <div class="info info-warning">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span>Download expired or deleted</span>
+                </div>
+                <button id="resetBtn" class="btn btn-secondary">
+                    Record New Screen
+                </button>
+            </div>
+        </div>
+
+        <div id="message" class="message hidden"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

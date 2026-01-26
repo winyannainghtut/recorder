@@ -1,10 +1,200 @@
 // Screen Recorder Configuration
-// Version: 3.1 - SCREEN RECORDING WITH DIRECT DOWNLOAD OPTION
+// Version: 3.2 - WITH WEBM DURATION FIX FOR SEEKABLE PLAYBACK
 // UNIQUE_MARKER_2026_01_26_SCREEN_RECORD
 const MAX_RECORDING_DURATION = 3 * 60 * 60 * 1000; // 3 hours
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 const UPLOAD_URL = '/upload';
 const API_BASE = window.location.origin;
+
+// ============================================================
+// WebM Duration Fix - Makes recordings seekable in VLC/players
+// ============================================================
+
+/**
+ * Fix WebM blob to include proper duration metadata
+ * This makes the file seekable in video players like VLC
+ * @param {Blob} blob - The WebM blob from MediaRecorder
+ * @param {number} duration - Duration in milliseconds
+ * @returns {Promise<Blob>} - Fixed WebM blob with duration metadata
+ */
+async function fixWebmDuration(blob, duration) {
+    try {
+        const buffer = await blob.arrayBuffer();
+        const view = new DataView(buffer);
+        
+        // Find the Segment element and inject duration
+        const fixedBuffer = injectDuration(buffer, duration);
+        
+        if (fixedBuffer) {
+            return new Blob([fixedBuffer], { type: 'video/webm' });
+        }
+    } catch (error) {
+        console.warn('Could not fix WebM duration, using original:', error);
+    }
+    return blob; // Return original if fix fails
+}
+
+/**
+ * Inject duration into WebM buffer
+ */
+function injectDuration(buffer, durationMs) {
+    const bytes = new Uint8Array(buffer);
+    const durationSec = durationMs / 1000;
+    
+    // Find the Info element (0x1549A966) which contains Duration
+    const infoElementId = [0x15, 0x49, 0xA9, 0x66];
+    let infoPos = findElement(bytes, infoElementId, 0);
+    
+    if (infoPos === -1) {
+        console.warn('Could not find Info element in WebM');
+        return null;
+    }
+    
+    // Find Duration element (0x4489) within Info, or find where to insert it
+    const durationElementId = [0x44, 0x89];
+    
+    // Skip the Info element ID and size to get to its contents
+    let pos = infoPos + 4; // Skip element ID
+    const infoSize = readVint(bytes, pos);
+    pos += infoSize.length;
+    const infoContentStart = pos;
+    const infoContentEnd = pos + infoSize.value;
+    
+    // Look for existing Duration element
+    let durationPos = findElement(bytes, durationElementId, infoContentStart, infoContentEnd);
+    
+    if (durationPos !== -1) {
+        // Duration exists, update it
+        let dPos = durationPos + 2; // Skip element ID
+        const dSize = readVint(bytes, dPos);
+        dPos += dSize.length;
+        
+        // Write the new duration as float64
+        const durationFloat = new Float64Array([durationSec]);
+        const durationBytes = new Uint8Array(durationFloat.buffer);
+        // Reverse for big-endian
+        for (let i = 0; i < 8; i++) {
+            bytes[dPos + i] = durationBytes[7 - i];
+        }
+        return bytes.buffer;
+    }
+    
+    // Duration doesn't exist, we need to insert it
+    // This is more complex as it requires adjusting sizes
+    // For simplicity, we'll create a new buffer with the duration inserted
+    
+    // Create duration element: ID (2 bytes) + Size (1 byte) + Float64 (8 bytes) = 11 bytes
+    const durationElement = new Uint8Array(11);
+    durationElement[0] = 0x44; // Duration element ID
+    durationElement[1] = 0x89;
+    durationElement[2] = 0x88; // Size: 8 bytes (VINT)
+    
+    // Float64 big-endian
+    const durationFloat = new Float64Array([durationSec]);
+    const durationBytes = new Uint8Array(durationFloat.buffer);
+    for (let i = 0; i < 8; i++) {
+        durationElement[3 + i] = durationBytes[7 - i];
+    }
+    
+    // Insert duration element at the start of Info content
+    const newBuffer = new Uint8Array(bytes.length + 11);
+    
+    // Copy everything before Info content
+    newBuffer.set(bytes.slice(0, infoContentStart), 0);
+    
+    // Insert duration element
+    newBuffer.set(durationElement, infoContentStart);
+    
+    // Copy rest of the file
+    newBuffer.set(bytes.slice(infoContentStart), infoContentStart + 11);
+    
+    // Update Info element size
+    // This is tricky because VINT sizes can change length
+    // For now, we'll try a simple approach that works for most cases
+    updateElementSize(newBuffer, infoPos + 4, infoSize.value + 11, infoSize.length);
+    
+    // Also need to update Segment size if it exists
+    const segmentId = [0x18, 0x53, 0x80, 0x67];
+    const segmentPos = findElement(newBuffer, segmentId, 0);
+    if (segmentPos !== -1) {
+        let sPos = segmentPos + 4;
+        const segSize = readVint(newBuffer, sPos);
+        if (segSize.value !== 0xFFFFFFFFFFFFFF) { // Not unknown size
+            updateElementSize(newBuffer, sPos, segSize.value + 11, segSize.length);
+        }
+    }
+    
+    return newBuffer.buffer;
+}
+
+/**
+ * Find an EBML element by its ID
+ */
+function findElement(bytes, elementId, start, end) {
+    end = end || bytes.length - elementId.length;
+    for (let i = start; i < end; i++) {
+        let found = true;
+        for (let j = 0; j < elementId.length; j++) {
+            if (bytes[i + j] !== elementId[j]) {
+                found = false;
+                break;
+            }
+        }
+        if (found) return i;
+    }
+    return -1;
+}
+
+/**
+ * Read a variable-length integer (VINT) from EBML
+ */
+function readVint(bytes, pos) {
+    const first = bytes[pos];
+    let length = 1;
+    let mask = 0x80;
+    
+    while (length <= 8 && !(first & mask)) {
+        length++;
+        mask >>= 1;
+    }
+    
+    if (length > 8) {
+        return { value: 0, length: 1 };
+    }
+    
+    let value = first & (mask - 1);
+    for (let i = 1; i < length; i++) {
+        value = (value << 8) | bytes[pos + i];
+    }
+    
+    return { value, length };
+}
+
+/**
+ * Update an element's size in the buffer
+ */
+function updateElementSize(bytes, pos, newSize, currentLength) {
+    // Encode the new size as VINT with the same length
+    let size = newSize;
+    const sizeBytes = [];
+    
+    for (let i = currentLength - 1; i >= 0; i--) {
+        sizeBytes[i] = size & 0xFF;
+        size >>= 8;
+    }
+    
+    // Add length marker to first byte
+    const marker = 0x80 >> (currentLength - 1);
+    sizeBytes[0] |= marker;
+    
+    for (let i = 0; i < currentLength; i++) {
+        bytes[pos + i] = sizeBytes[i];
+    }
+}
+
+// ============================================================
+// End WebM Duration Fix
+// ============================================================
 
 // State
 let mediaRecorder = null;
@@ -139,17 +329,26 @@ async function startRecording() {
             }
         };
 
-        mediaRecorder.onstop = () => {
-            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        mediaRecorder.onstop = async () => {
+            const rawBlob = new Blob(recordedChunks, { type: 'video/webm' });
 
             // Check file size
-            if (blob.size > MAX_FILE_SIZE) {
-                showMessage(`Recording too large (${formatBytes(blob.size)}). Max: ${formatBytes(MAX_FILE_SIZE)}`, 'error');
+            if (rawBlob.size > MAX_FILE_SIZE) {
+                showMessage(`Recording too large (${formatBytes(rawBlob.size)}). Max: ${formatBytes(MAX_FILE_SIZE)}`, 'error');
                 stopStream();
                 setState('idle');
                 return;
             }
 
+            // Calculate recording duration
+            const recordingDuration = Date.now() - startTime;
+            
+            // Show processing message
+            showMessage('Processing recording...', 'info');
+            
+            // Fix WebM duration metadata for seekable playback
+            const blob = await fixWebmDuration(rawBlob, recordingDuration);
+            
             currentBlob = blob;
             recordedVideo.src = URL.createObjectURL(blob);
             liveVideo.style.display = 'none';
@@ -163,6 +362,7 @@ async function startRecording() {
             
             setState('stopped');
             stopStream();
+            showMessage('Recording ready!', 'success');
         };
 
         mediaRecorder.start(1000); // Collect chunks every second

@@ -1,17 +1,39 @@
 # Screen Recorder - Kubernetes Web App
 
-A lightweight, production-ready screen recording web application designed for Kubernetes deployment with minimal resource usage and no persistent storage.
+A lightweight, production-ready screen recording web application designed for Kubernetes deployment with minimal resource usage and no persistent storage. Exposed via Cloudflare Tunnel for secure, easy access.
 
 ## Features
 
 - **Browser-based screen capture** using getDisplayMedia API
 - **Record entire screen, window, or browser tab** with optional audio
+- **Support for long recordings** - up to 3 hours, 2GB file size
 - **One-time download** - recordings are deleted immediately after download
-- **Auto-expiration** - recordings expire after 10 minutes
+- **Auto-expiration** - recordings expire after 1 hour
 - **Zero persistence** - no database, no PVC, temporary storage only
-- **Ultra-lightweight** - optimized for 50-100Mi memory usage
+- **Ultra-lightweight** - optimized for 128-256Mi memory usage
 - **Secure tokens** - cryptographically secure one-time download tokens
 - **Streaming I/O** - no full files in RAM, efficient memory usage
+- **CDN-safe** - proper cache control headers prevent stale content
+
+## Quick Start
+
+```bash
+# 1. Clone and push to your GitHub repo
+git clone <this-repo>
+cd recorder
+
+# 2. Set up GitHub Actions secrets (DOCKER_USERNAME, DOCKER_PASSWORD)
+
+# 3. Push to trigger Docker build
+git push origin main
+
+# 4. Deploy to Kubernetes
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+
+# 5. Set up Cloudflare Tunnel (see CLOUDFLARE_TUNNEL_SETUP.md)
+```
 
 ## Architecture
 
@@ -31,10 +53,10 @@ The app uses **streaming upload → temp file → streaming download**:
 
 **Why temp file instead of pure memory streaming:**
 
-- **Memory safety**: Prevents OOM with large recordings (up to 50MB)
-- **Reliability**: Survives pod restarts (within emptyDir lifecycle)
+- **Memory safety**: Prevents OOM with large recordings (up to 2GB)
+- **Reliability**: Survives brief interruptions
 - **Simpler logic**: Easier to implement correctly with Go's io.Copy
-- **Predictable memory**: Memory usage stays ~50-100Mi regardless of file size
+- **Predictable memory**: Memory usage stays ~128-256Mi regardless of file size
 
 **Streaming benefits:**
 
@@ -44,19 +66,29 @@ The app uses **streaming upload → temp file → streaming download**:
 
 ### Memory Usage Control
 
-The app achieves ultra-low memory usage through:
+The app achieves low memory usage through:
 
 1. **Go binary compiled with `-ldflags="-w -s"`** - stripped binary (~5-10MB)
 2. **Distroless base image** - minimal runtime overhead
 3. **Streaming I/O** - never loads full files into RAM
 4. **Single replica** - no resource multiplication
-5. **Resource limits** - Kubernetes enforces 100Mi max
+5. **Resource limits** - Kubernetes enforces 256Mi max
 6. **No frameworks** - plain HTML/CSS/JS frontend, Go stdlib backend
+
+### CDN Cache Control
+
+To prevent CDN caching issues (especially with Cloudflare), the app implements:
+
+1. **Cache-busting version strings** in HTML (`app.js?v=3.0.0`)
+2. **No-cache headers** for JS/CSS files (`Cache-Control: no-cache, no-store, must-revalidate`)
+3. **Must-revalidate headers** for HTML files
+
+This ensures that code updates are served immediately without CDN cache purging.
 
 ## Project Structure
 
 ```
-video-recorder/
+recorder/
 ├── backend/
 │   ├── main.go          # Go backend server
 │   ├── go.mod           # Go dependencies
@@ -64,15 +96,19 @@ video-recorder/
 ├── frontend/
 │   ├── index.html       # Main HTML page
 │   ├── styles.css       # Styling
-│   └── app.js           # Screen recording logic
+│   └── app.js           # Screen recording logic (getDisplayMedia)
 ├── k8s/
-│   ├── deployment.yaml  # Kubernetes deployment
-│   ├── service.yaml     # Service
-│   ├── ingress.yaml     # Ingress with TLS
-│   ├── namespace.yaml   # Namespace
-│   └── cert-manager-issuer.yaml  # Optional TLS issuer
+│   ├── deployment.yaml       # Kubernetes deployment
+│   ├── service.yaml          # ClusterIP service
+│   ├── namespace.yaml        # Namespace
+│   └── cloudflare-tunnel.yaml # Cloudflare Tunnel connector
+├── .github/
+│   └── workflows/
+│       └── docker-push.yml   # CI/CD pipeline
 ├── Dockerfile           # Multi-stage build
 ├── .dockerignore        # Docker ignore file
+├── CLOUDFLARE_TUNNEL_SETUP.md  # Tunnel setup guide
+├── GITHUB_ACTIONS_SETUP.md     # CI/CD setup guide
 └── README.md           # This file
 ```
 
@@ -82,55 +118,33 @@ video-recorder/
 
 - Kubernetes cluster (1.20+)
 - kubectl configured
-- Docker or compatible container runtime
-- Domain name with DNS pointing to your cluster
+- Docker Hub account
+- GitHub account
+- Cloudflare account with a domain
 
-### Optional (for TLS)
+### For CI/CD
 
-- NGINX Ingress Controller
-- cert-manager (for automatic Let's Encrypt certificates)
+- GitHub repository with Actions enabled
+- Docker Hub credentials as GitHub secrets
 
 ## Step-by-Step Deployment Guide
 
-### Step 1: Clone and Build Docker Image
+### Step 1: Set Up GitHub Actions
 
-```bash
-# Navigate to project directory
-cd video-recorder
+1. Create GitHub repository secrets:
+   - `DOCKER_USERNAME` - Your Docker Hub username
+   - `DOCKER_PASSWORD` - Your Docker Hub password or access token
 
-# Build Docker image
-docker build -t video-recorder:latest .
+2. Push code to trigger the build:
+   ```bash
+   git push origin main
+   ```
 
-# (Optional) Tag and push to your registry
-docker tag video-recorder:latest your-registry.com/video-recorder:latest
-docker push your-registry.com/video-recorder:latest
-```
+3. Monitor build at: `https://github.com/<your-user>/<your-repo>/actions`
 
-### Step 2: Configure Kubernetes Manifests
+See `GITHUB_ACTIONS_SETUP.md` for detailed instructions.
 
-Edit `k8s/ingress.yaml` to use your domain:
-
-```yaml
-# Replace "recorder.yourdomain.com" with your actual domain
-spec:
-  ingressClassName: nginx
-  tls:
-  - hosts:
-    - recorder.example.com  # YOUR DOMAIN HERE
-    secretName: video-recorder-tls
-  rules:
-  - host: recorder.example.com  # YOUR DOMAIN HERE
-```
-
-If using cert-manager, also edit `k8s/cert-manager-issuer.yaml`:
-
-```yaml
-spec:
-  acme:
-    email: your-email@example.com  # YOUR EMAIL HERE
-```
-
-### Step 3: Deploy to Kubernetes
+### Step 2: Deploy to Kubernetes
 
 ```bash
 # Create namespace
@@ -140,66 +154,56 @@ kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 
-# Deploy ingress (configure domain first!)
-kubectl apply -f k8s/ingress.yaml
-```
-
-### Step 4: (Optional) Setup TLS with cert-manager
-
-If you have cert-manager installed:
-
-```bash
-# Apply ClusterIssuer
-kubectl apply -f k8s/cert-manager-issuer.yaml
-
-# Update ingress to use the issuer
-# (already configured in ingress.yaml)
-```
-
-The certificate will be automatically issued and renewed.
-
-### Step 5: Verify Deployment
-
-```bash
-# Check pod status
+# Verify deployment
 kubectl get pods -n video-recorder
-
-# Check service
 kubectl get svc -n video-recorder
+```
 
-# Check ingress
-kubectl get ingress -n video-recorder
+### Step 3: Set Up Cloudflare Tunnel
 
-# View logs
+1. Create a tunnel in Cloudflare Zero Trust dashboard
+2. Configure public hostname to point to `video-recorder:8080`
+3. Create Kubernetes secret with tunnel token:
+   ```bash
+   kubectl create secret generic cloudflare-tunnel-token -n video-recorder --from-literal=token=<YOUR_TOKEN>
+   ```
+4. Deploy the tunnel connector:
+   ```bash
+   kubectl apply -f k8s/cloudflare-tunnel.yaml
+   ```
+
+See `CLOUDFLARE_TUNNEL_SETUP.md` for detailed instructions.
+
+### Step 4: Verify Deployment
+
+```bash
+# Check all resources
+kubectl get all -n video-recorder
+
+# View application logs
 kubectl logs -n video-recorder -l app=video-recorder -f
+
+# View tunnel logs
+kubectl logs -n video-recorder -l app=cloudflare-tunnel -f
 ```
 
 Expected output:
-
 ```
 NAME                              READY   STATUS    RESTARTS   AGE
-video-recorder-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
+pod/video-recorder-xxxxx          1/1     Running   0          5m
+pod/cloudflare-tunnel-xxxxx       1/1     Running   0          5m
+
+NAME                    TYPE        CLUSTER-IP      PORT(S)
+service/video-recorder  ClusterIP   10.96.xxx.xxx   8080/TCP
 ```
 
-### Step 6: Configure DNS
+### Step 5: Test the Application
 
-Point your domain to your cluster's ingress IP:
-
-**For LoadBalancer ingress:**
-```bash
-kubectl get svc -n ingress-nginx
-# Add A record: recorder.example.com -> <EXTERNAL-IP>
-```
-
-**For other ingress types:** Use your cloud provider's DNS configuration.
-
-### Step 7: Test the Application
-
-1. Open `https://recorder.example.com` in your browser
+1. Open your configured domain (e.g., `https://recorder.yourdomain.com`)
 2. Click "Start Recording"
 3. Select what to share: entire screen, application window, or browser tab
 4. Optionally enable audio capture (system audio and/or microphone)
-5. Record your screen (max 5 minutes)
+5. Record your screen (max 3 hours)
 6. Click "Stop Recording" or stop sharing via browser UI
 7. Preview the recording
 8. Click "Upload for Download"
@@ -215,7 +219,7 @@ Upload a video recording.
 **Request:**
 ```
 Content-Type: multipart/form-data
-X-Auth-Token: optional-auth-header  # If AUTH_TOKEN is set
+X-Auth-Token: optional-auth-header  # If AUTH_TOKEN env var is set
 
 Form data:
   video: <video file>  # video/webm
@@ -225,31 +229,27 @@ Form data:
 ```json
 {
   "token": "abc123...",
-  "expiresAt": "2026-01-26T15:30:00Z"
+  "expiresAt": "2026-01-26T16:30:00Z"
 }
 ```
 
 **Error Responses:**
 - `400 Bad Request` - Invalid file type or no file provided
 - `401 Unauthorized` - Invalid auth token
-- `413 Payload Too Large` - File exceeds 50MB limit
+- `413 Payload Too Large` - File exceeds 2GB limit
+- `429 Too Many Requests` - Rate limit exceeded
 - `500 Internal Server Error` - Server error
 
 ### GET /download/{token}
 
 Download a video recording (one-time use).
 
-**Request:**
-```
-GET /download/abc123...
-```
-
 **Response (200 OK):**
 ```
 Content-Type: video/webm
 Content-Disposition: attachment; filename="recording_20260126_153005.webm"
 Content-Length: <size>
-<binary video data>
+Cache-Control: no-store, no-cache, must-revalidate
 ```
 
 **Error Responses:**
@@ -258,7 +258,7 @@ Content-Length: <size>
 
 ### GET /healthz
 
-Health check endpoint.
+Health check endpoint for Kubernetes probes.
 
 **Response (200 OK):**
 ```
@@ -267,38 +267,33 @@ OK
 
 ### GET /
 
-Serve the frontend application.
+Serve the frontend application with proper cache control headers.
 
 ## Configuration
 
-### Environment Variables
+### Recording Limits
 
-The app supports optional environment variables:
+| Setting | Value | Location |
+|---------|-------|----------|
+| Max recording duration | 3 hours | `frontend/app.js` |
+| Max file size | 2 GB | `frontend/app.js`, `backend/main.go` |
+| Auto-delete TTL | 1 hour | `backend/main.go` |
+| Rate limit | 10 uploads/min/IP | `backend/main.go` |
+
+### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AUTH_TOKEN` | Optional auth token for uploads | none (public) |
-| `PORT` | Server port | 8080 |
 
-To set auth token, update `k8s/deployment.yaml`:
-
+To enable auth, add to deployment:
 ```yaml
-spec:
-  template:
-    spec:
-      containers:
-      - name: recorder
-        env:
-        - name: AUTH_TOKEN
-          value: "your-secret-token"
-```
-
-Then send the token in upload requests:
-
-```bash
-curl -X POST https://recorder.example.com/upload \
-  -H "X-Auth-Token: your-secret-token" \
-  -F "video=@recording.webm"
+env:
+- name: AUTH_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: recorder-secrets
+      key: auth-token
 ```
 
 ### Resource Limits
@@ -308,306 +303,177 @@ Current configuration in `k8s/deployment.yaml`:
 ```yaml
 resources:
   requests:
-    memory: "128Mi"   # Minimum guaranteed memory
-    cpu: "100m"       # Minimum guaranteed CPU
+    memory: "128Mi"
+    cpu: "100m"
   limits:
-    memory: "256Mi"   # Maximum memory (OOM if exceeded)
-    cpu: "500m"       # Maximum CPU
+    memory: "256Mi"
+    cpu: "500m"
 ```
 
-Adjust based on your needs:
-- For higher concurrency: increase requests/limits
-- For lower resource usage: decrease limits (monitor for OOM)
-
-### Recording Limits
-
-Frontend limits (configurable in `frontend/app.js`):
-
-```javascript
-const MAX_RECORDING_DURATION = 3 * 60 * 60 * 1000; // 3 hours
-const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;      // 2GB
-```
-
-Backend limits (configurable in `backend/main.go`):
-
-```go
-const maxUploadSize = 2 * 1024 * 1024 * 1024 // 2GB
-const ttlDuration = 60 * time.Minute         // Auto-delete after 1 hour
-```
-
-### emptyDir Storage
-
-The deployment uses an emptyDir volume for temporary storage:
+### Storage Limits
 
 ```yaml
 volumes:
 - name: tmp-videos
   emptyDir:
-    sizeLimit: "5Gi"  # Total storage per pod (supports multiple 2GB recordings)
+    sizeLimit: "5Gi"  # Supports multiple concurrent recordings
 ```
 
-Adjust `sizeLimit` based on expected concurrent recordings.
-
-## Security Considerations
+## Security
 
 ### Implemented
 
 1. **One-time tokens** - Downloads expire after first use
-2. **TTL-based expiration** - Auto-delete after 10 minutes
+2. **TTL-based expiration** - Auto-delete after 1 hour
 3. **File type validation** - Only accepts video content
-4. **Size limits** - Max 50MB upload
-5. **Security headers** - Ingress adds XSS protection
-6. **Non-root container** - Runs as nonroot user
-7. **Read-only filesystem** (except /tmp)
-8. **Dropped capabilities** - Minimal container privileges
+4. **Size limits** - Max 2GB upload
+5. **Rate limiting** - 10 uploads per minute per IP
+6. **Non-root container** - Runs as UID 65532
+7. **Dropped capabilities** - Minimal container privileges
+8. **Cache control headers** - Prevent sensitive data caching
+9. **Cloudflare protection** - DDoS protection, WAF, automatic HTTPS
 
-### Additional Recommendations
+### Recommendations for Production
 
-1. **Enable auth tokens** for production use
-2. **Configure rate limiting** in ingress for production
-3. **Use network policies** to restrict pod communication
-4. **Enable pod security policies** or pod security standards
-5. **Monitor for abuse** using Prometheus/metrics
-6. **Regular updates** - Keep base images updated
-
-## Monitoring and Logging
-
-### Logs
-
-View real-time logs:
-
-```bash
-kubectl logs -n video-recorder -l app=video-recorder -f
-```
-
-Log format:
-
-```
-2026/01/26 15:30:00 Starting server on :8080
-2026/01/26 15:30:00 Using temp directory: /tmp/videos
-2026/01/26 15:30:15 Uploaded: abc123.webm (size: 12345678 bytes, expires: 2026-01-26 15:40:15 +0000 UTC)
-2026/01/26 15:30:20 Downloaded: abc123.webm (token: abc123)
-2026/01/26 15:35:00 Cleaned up token xyz789 (expired: true, downloaded: false)
-```
-
-### Metrics
-
-The app exposes basic metrics through health checks:
-
-```bash
-curl https://recorder.example.com/healthz
-```
-
-### Resource Monitoring
-
-Monitor pod resource usage:
-
-```bash
-kubectl top pod -n video-recorder
-kubectl top node
-```
+1. Enable `AUTH_TOKEN` for upload authentication
+2. Configure Cloudflare WAF rules
+3. Set up Cloudflare Access for additional auth layer
+4. Monitor logs for abuse patterns
+5. Keep base images updated
 
 ## Troubleshooting
 
 ### Pod Not Starting
 
 ```bash
-# Check pod status
 kubectl describe pod -n video-recorder -l app=video-recorder
-
-# Check logs
 kubectl logs -n video-recorder -l app=video-recorder
 ```
 
 Common issues:
-- Image pull error → Verify image name/tag
-- OOMKilled → Increase memory limit
-- CrashLoopBackOff → Check logs for errors
+- `ImagePullBackOff` → Check Docker Hub credentials and image name
+- `OOMKilled` → Increase memory limit
+- `CrashLoopBackOff` → Check logs for application errors
 
-### Ingress Not Working
-
-```bash
-# Check ingress status
-kubectl describe ingress -n video-recorder
-
-# Check ingress controller
-kubectl get pods -n ingress-nginx
-
-# Verify DNS
-nslookup recorder.example.com
-```
-
-### Certificate Issues
+### Cloudflare Tunnel Issues
 
 ```bash
-# Check certificate status
-kubectl get certificate -n video-recorder
-
-# Check cert-manager logs
-kubectl logs -n cert-manager deployment/cert-manager
-
-# Check ingress annotation
-kubectl get ingress -n video-recorder -o yaml
+kubectl logs -n video-recorder -l app=cloudflare-tunnel
 ```
 
-### Upload/Download Issues
+Common issues:
+- `no more connections active` → Check tunnel token and configuration
+- Pod not ready → Ensure `--metrics 0.0.0.0:2000` is in args for health probes
 
-```bash
-# Check storage usage
-kubectl exec -n video-recorder -l app=video-recorder -- df -h /tmp
+### Old Code Being Served (CDN Caching)
 
-# Check file permissions
-kubectl exec -n video-recorder -l app=video-recorder -- ls -la /tmp/videos
+If updates aren't appearing:
 
-# Test upload manually
-curl -X POST https://recorder.example.com/upload -F "video=@test.webm"
-```
+1. **Check the app.js version** in browser dev tools Network tab
+   - Should show `app.js?v=3.0.0`
 
-## Scaling
+2. **Hard refresh** the browser: `Ctrl+Shift+R` (Windows) or `Cmd+Shift+R` (Mac)
 
-### Horizontal Scaling
+3. **Use incognito window** to bypass browser cache
 
-For higher concurrency, increase replicas:
+4. **Verify K8s is running latest image:**
+   ```bash
+   kubectl rollout restart deployment/video-recorder -n video-recorder
+   ```
 
-```yaml
-# Update k8s/deployment.yaml
-spec:
-  replicas: 3  # Increase from 1
-```
+5. **If still cached**, purge Cloudflare cache:
+   - Cloudflare Dashboard → Caching → Purge Everything
 
-**Note:** Each pod has independent storage. Recordings are pod-specific.
+### Recording Not Starting
 
-### Resource Scaling
+- Ensure browser supports `getDisplayMedia` (Chrome 72+, Firefox 66+, Edge 79+)
+- Check browser console for permission errors
+- Verify HTTPS is enabled (required for screen capture API)
 
-For higher throughput, adjust resources:
+## CI/CD Pipeline
 
-```yaml
-resources:
-  requests:
-    memory: "100Mi"   # Increase
-    cpu: "100m"       # Increase
-  limits:
-    memory: "200Mi"   # Increase
-    cpu: "400m"       # Increase
-```
+The GitHub Actions workflow (`.github/workflows/docker-push.yml`):
 
-### Storage Scaling
+1. Triggers on push to `main` branch
+2. Logs into Docker Hub
+3. Builds Docker image for `linux/amd64`
+4. Pushes with tags: `latest`, `main`, commit SHA
+5. Verifies source code contains screen recording logic
 
-For larger recordings or more concurrent uploads, increase emptyDir size:
+After pushing code changes:
+1. Wait for GitHub Actions to complete
+2. Restart Kubernetes deployment to pull new image:
+   ```bash
+   kubectl rollout restart deployment/video-recorder -n video-recorder
+   ```
 
-```yaml
-emptyDir:
-  sizeLimit: "1Gi"  # Increase from 500Mi
-```
+## Performance
 
-## Maintenance
-
-### Rolling Updates
-
-```bash
-# Build new image
-docker build -t video-recorder:v2 .
-
-# Update deployment
-kubectl set image deployment/video-recorder -n video-recorder recorder=video-recorder:v2
-
-# Monitor rollout
-kubectl rollout status deployment/video-recorder -n video-recorder
-```
-
-### Rollback
-
-```bash
-# Rollback to previous version
-kubectl rollout undo deployment/video-recorder -n video-recorder
-
-# Check rollback status
-kubectl rollout status deployment/video-recorder -n video-recorder
-```
-
-### Cleanup
-
-```bash
-# Delete deployment
-kubectl delete -f k8s/
-
-# Delete namespace (everything)
-kubectl delete namespace video-recorder
-```
-
-## Production Checklist
-
-Before deploying to production:
-
-- [ ] Configure your domain in ingress.yaml
-- [ ] Set AUTH_TOKEN environment variable
-- [ ] Configure TLS with cert-manager
-- [ ] Set up DNS records
-- [ ] Test recording/upload/download flow
-- [ ] Configure monitoring/alerting
-- [ ] Set up log aggregation
-- [ ] Review and adjust resource limits
-- [ ] Configure ingress rate limiting
-- [ ] Test scaling behavior
-- [ ] Document your deployment
-- [ ] Set up backup/restore procedures (though no data persistence needed)
-
-## License
-
-MIT License - Feel free to use and modify as needed.
-
-## Support
-
-For issues or questions:
-1. Check the troubleshooting section
-2. Review logs with `kubectl logs`
-3. Check ingress controller and cert-manager status
-4. Verify DNS configuration
-
-## Performance Characteristics
-
-### Expected Performance
-
-- **Cold start**: ~2-3 seconds
-- **Idle memory**: ~50-70Mi
-- **Active memory**: ~70-100Mi (during upload/download)
-- **CPU idle**: Near zero
-- **CPU active**: ~50-100m per concurrent operation
-- **Max concurrent uploads**: ~10-20 (depends on file size)
-
-### Optimization Notes
-
-- Go binary is compiled with `-ldflags="-w -s"` for minimal size
-- Distroless base image reduces attack surface
-- Streaming I/O prevents memory bloat
-- emptyDir provides fast local storage
-- Single replica minimizes resource usage
-
----
-
-**Built with simplicity, security, and efficiency in mind.**
+| Metric | Value |
+|--------|-------|
+| Cold start | ~2-3 seconds |
+| Idle memory | ~50-70Mi |
+| Active memory | ~100-200Mi |
+| Max concurrent uploads | ~5-10 (with current limits) |
+| Max recording duration | 3 hours |
+| Max file size | 2GB |
 
 ## Screen Recording Notes
 
 ### Browser Support
 
-Screen recording using `getDisplayMedia` is supported in:
-- Chrome 72+
-- Firefox 66+
-- Edge 79+
-- Safari 13+ (limited audio support)
+| Browser | Version | System Audio | Notes |
+|---------|---------|--------------|-------|
+| Chrome | 72+ | Yes (Windows/ChromeOS) | Best support |
+| Firefox | 66+ | Limited | Tab audio only |
+| Edge | 79+ | Yes (Windows) | Chromium-based |
+| Safari | 13+ | No | Screen only |
 
 ### Audio Capture
 
-The application attempts to capture:
-1. **System audio** - from the shared screen/tab (browser dependent)
-2. **Microphone audio** - for voiceover/narration
+The application captures:
+1. **System audio** - from the shared screen/tab (browser/OS dependent)
+2. **Microphone audio** - for voiceover/narration (optional)
 
-Note: System audio capture may not work in all browsers/OS combinations. Chrome on Windows/ChromeOS has the best support.
-
-### Privacy Considerations
+### Privacy
 
 - Screen recording requires explicit user permission
-- Users can choose to share entire screen, specific window, or browser tab
-- Recording indicator is shown by the browser while sharing
-- Users can stop sharing at any time via browser controls
+- Users choose what to share (screen, window, or tab)
+- Browser shows recording indicator while sharing
+- Users can stop sharing anytime via browser controls
+
+## Maintenance
+
+### Update Application
+
+```bash
+# Make code changes
+git add -A
+git commit -m "description of changes"
+git push origin main
+
+# Wait for GitHub Actions to build
+
+# Restart deployment to pull new image
+kubectl rollout restart deployment/video-recorder -n video-recorder
+```
+
+### Rollback
+
+```bash
+kubectl rollout undo deployment/video-recorder -n video-recorder
+```
+
+### Cleanup
+
+```bash
+kubectl delete namespace video-recorder
+```
+
+## License
+
+MIT License - Feel free to use and modify as needed.
+
+---
+
+**Built with simplicity, security, and efficiency in mind.**

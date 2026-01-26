@@ -1,6 +1,6 @@
 # Cloudflare Tunnel Setup Guide
 
-This guide explains how to expose your video recorder app using Cloudflare Tunnel on your local Kubernetes cluster.
+This guide explains how to expose your screen recorder app using Cloudflare Tunnel on your local Kubernetes cluster.
 
 ## Why Cloudflare Tunnel?
 
@@ -9,6 +9,7 @@ This guide explains how to expose your video recorder app using Cloudflare Tunne
 - **Free TLS certificates** - Automatic HTTPS
 - **DDoS protection** - Included with Cloudflare
 - **Zero Trust security** - Optional access policies
+- **Easy setup** - No Ingress controller or cert-manager needed
 
 ## Prerequisites
 
@@ -23,14 +24,14 @@ This guide explains how to expose your video recorder app using Cloudflare Tunne
 1. Go to [Cloudflare Zero Trust Dashboard](https://one.dash.cloudflare.com/)
 2. Navigate to **Access** → **Tunnels**
 3. Click **Create a tunnel**
-4. Name it: `video-recorder-tunnel`
+4. Name it: `recorder-tunnel`
 5. Click **Save tunnel**
 6. **Copy the tunnel token** (you'll need this)
 7. Skip the connector installation (we'll do it in K8s)
 8. Configure public hostname:
    - **Subdomain**: `recorder` (or your choice)
    - **Domain**: Select your domain
-   - **Service**: `http://video-recorder.video-recorder.svc.cluster.local:80`
+   - **Service**: `http://video-recorder:8080`
 9. Click **Save**
 
 ### Option B: Via CLI
@@ -61,14 +62,21 @@ kubectl apply -f k8s/namespace.yaml
 
 ### 2.2 Create the tunnel token secret
 
+**PowerShell (Windows):**
+```powershell
+kubectl create secret generic cloudflare-tunnel-token `
+  -n video-recorder `
+  --from-literal=token=<YOUR_TUNNEL_TOKEN>
+```
+
+**Bash (Linux/Mac):**
 ```bash
-# Replace <YOUR_TUNNEL_TOKEN> with the token from Step 1
 kubectl create secret generic cloudflare-tunnel-token \
   -n video-recorder \
   --from-literal=token=<YOUR_TUNNEL_TOKEN>
 ```
 
-### 2.3 Deploy the video recorder app
+### 2.3 Deploy the screen recorder app
 
 ```bash
 kubectl apply -f k8s/deployment.yaml
@@ -80,6 +88,8 @@ kubectl apply -f k8s/service.yaml
 ```bash
 kubectl apply -f k8s/cloudflare-tunnel.yaml
 ```
+
+**Important:** The tunnel connector includes `--metrics 0.0.0.0:2000` for health probes. This is required for Kubernetes to properly monitor the tunnel pod.
 
 ## Step 3: Verify Deployment
 
@@ -153,9 +163,27 @@ The service might not be reachable from the tunnel. Check:
 # Verify service is running
 kubectl get svc -n video-recorder
 
-# Test internal connectivity
-kubectl run test --rm -it --image=curlimages/curl -- \
-  curl -v http://video-recorder.video-recorder.svc.cluster.local:80/healthz
+# Verify app pod is running
+kubectl get pods -n video-recorder -l app=video-recorder
+
+# Test the service endpoint
+kubectl port-forward svc/video-recorder -n video-recorder 8080:8080
+# Then visit http://localhost:8080 in your browser
+```
+
+### Tunnel Pod Not Ready (0/1)
+
+If the tunnel pod shows `0/1 Ready`:
+
+```bash
+# Check tunnel logs for errors
+kubectl logs -n video-recorder -l app=cloudflare-tunnel
+
+# Ensure the metrics endpoint is enabled (required for health probes)
+# The args should include: --metrics 0.0.0.0:2000
+
+# Restart the tunnel
+kubectl rollout restart deployment/cloudflare-tunnel -n video-recorder
 ```
 
 ### DNS not resolving
@@ -230,9 +258,23 @@ cloudflared tunnel delete video-recorder-tunnel
 | Works behind NAT | No | Yes |
 | Cost | Load balancer fees | Free |
 
+## CDN Caching Notes
+
+Cloudflare may cache static files. The application includes cache-control headers to prevent this:
+
+- **JS/CSS files**: `Cache-Control: no-cache, no-store, must-revalidate`
+- **HTML files**: `Cache-Control: no-cache, must-revalidate`
+- **Cache-busting**: Static files use version strings (`app.js?v=3.0.0`)
+
+If you experience issues with old code being served after updates:
+
+1. **Hard refresh**: `Ctrl+Shift+R` (Windows) or `Cmd+Shift+R` (Mac)
+2. **Use incognito window** to bypass browser cache
+3. **Purge Cloudflare cache**: Dashboard → Caching → Purge Everything
+
 ## Next Steps
 
-1. Test recording and downloading videos
+1. Test screen recording and downloading
 2. Consider adding Cloudflare Access for authentication
 3. Monitor tunnel health in Cloudflare Dashboard
 4. Set up alerts for tunnel disconnections

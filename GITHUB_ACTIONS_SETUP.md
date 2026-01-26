@@ -2,7 +2,7 @@
 
 This guide explains how to set up GitHub Actions for automatic Docker image building and pushing to Docker Hub.
 
-## Workflow File
+## Workflow Overview
 
 ### Docker Build and Push (`.github/workflows/docker-push.yml`)
 
@@ -13,25 +13,24 @@ This guide explains how to set up GitHub Actions for automatic Docker image buil
 - Manual trigger via UI
 
 **Features:**
-- Multi-platform builds (linux/amd64, linux/arm64)
-- Automated tagging (latest, branch name, version tags)
+- Single platform build (linux/amd64)
+- Automated tagging (latest, branch name, commit SHA)
 - Docker Hub authentication
-- Layer caching for faster builds
-- Vulnerability scanning with Trivy
-- Results uploaded to GitHub Security tab
+- Cache-busting for fresh builds
+- Source code verification step
 
 ## Required GitHub Secrets
 
 ### For Docker Hub (Required)
 
-1. Go to your GitHub repository: `https://github.com/winyannainghtut/webrecorder/settings/secrets/actions`
+1. Go to your GitHub repository: `https://github.com/<your-username>/recorder/settings/secrets/actions`
 2. Click "New repository secret"
 3. Add these secrets:
 
 | Secret Name | Value | Description |
 |-------------|--------|-------------|
 | `DOCKER_USERNAME` | Your Docker Hub username | Your Docker Hub account username |
-| `DOCKER_PASSWORD` | Your Docker Hub password/token | Use access token, not password |
+| `DOCKER_PASSWORD` | Your Docker Hub password/token | Use access token (recommended) |
 
 **How to create Docker Hub access token:**
 1. Log in to https://hub.docker.com
@@ -46,11 +45,11 @@ This guide explains how to set up GitHub Actions for automatic Docker image buil
 
 ### Update Image Name
 
-If your Docker Hub username is different, update `.github/workflows/docker-push.yml`:
+Update `.github/workflows/docker-push.yml` with your Docker Hub username:
 
 ```yaml
 env:
-  IMAGE_NAME: your-username/webrecorder  # Change this
+  IMAGE_NAME: your-username/recorder  # Change this
 ```
 
 ## Usage
@@ -58,10 +57,10 @@ env:
 ### Automatic Docker Build on Push
 
 Every push to `main` triggers:
-1. Build Docker image
-2. Push to Docker Hub with tags: `latest`, `sha-<commit>`
-3. Scan for vulnerabilities
-4. Upload results to GitHub Security tab
+1. Checkout code
+2. Verify source code contains screen recording logic
+3. Build Docker image (linux/amd64)
+4. Push to Docker Hub with tags: `latest`, `main`, commit SHA
 
 ### Manual Build
 
@@ -80,23 +79,21 @@ git push origin v1.0.0
 ```
 
 This creates tags:
-- `winyannainghtut/webrecorder:1.0.0`
-- `winyannainghtut/webrecorder:1.0`
-- `winyannainghtut/webrecorder:1`
-- `latest` (if pushing to main)
+- `your-username/recorder:1.0.0`
+- `your-username/recorder:1.0`
+- `your-username/recorder:1`
+- `your-username/recorder:latest`
 
-## Manual Deployment to Kubernetes
+## Deploying After Build
 
-After the Docker image is built and pushed, you can manually deploy to your Kubernetes cluster:
+After the Docker image is built and pushed:
 
 ```bash
-# Pull the latest image
-docker pull winyannainghtut/webrecorder:latest
+# Option 1: Restart deployment to pull new image
+kubectl rollout restart deployment/video-recorder -n video-recorder
 
-# Update deployment to use new image
-kubectl set image deployment/video-recorder \
-  recorder=winyannainghtut/webrecorder:latest \
-  -n video-recorder
+# Option 2: Delete pods to force new pull
+kubectl delete pod -n video-recorder -l app=video-recorder
 
 # Verify the rollout
 kubectl rollout status deployment/video-recorder -n video-recorder
@@ -105,67 +102,19 @@ kubectl rollout status deployment/video-recorder -n video-recorder
 kubectl get pods -n video-recorder -l app=video-recorder
 ```
 
-Or apply manifests with updated image:
-```bash
-# Update image in k8s/deployment.yaml
-sed -i 's|image: video-recorder:latest|image: winyannainghtut/webrecorder:latest|g' k8s/deployment.yaml
+## Important: Cache Control
 
-# Apply the updated deployment
-kubectl apply -f k8s/deployment.yaml
-```
+The application includes cache-busting to prevent CDN (Cloudflare) from serving stale files:
 
-## Customization
+1. **Version strings in HTML**: `app.js?v=3.0.0`
+2. **No-cache headers**: Set by Go backend for JS/CSS files
+3. **Fresh builds**: Workflow uses `no-cache: true` and `pull: true`
 
-### Disable Multi-Platform Builds
-
-To build only for linux/amd64, edit `.github/workflows/docker-push.yml`:
-
-```yaml
-- name: Build and push Docker image
-  uses: docker/build-push-action@v5
-  with:
-    platforms: linux/amd64  # Remove linux/arm64
-    # ... rest of config
-```
-
-### Disable Vulnerability Scanning
-
-To skip Trivy scanning, remove these steps from `.github/workflows/docker-push.yml`:
-
-```yaml
-- name: Run Trivy vulnerability scanner
-  # ... remove this step
-
-- name: Upload Trivy results to GitHub Security tab
-  # ... remove this step
-```
-
-### Add Notifications
-
-Add Slack/Email notifications in `.github/workflows/docker-push.yml`:
-
-```yaml
-- name: Notify Slack on success
-  if: success()
-  uses: 8398a7/action-slack@v3
-  with:
-    status: ${{ job.status }}
-    text: 'Docker image pushed successfully!'
-    webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-```
-
-### Build on Different Branches
-
-To trigger builds on different branches, edit `.github/workflows/docker-push.yml`:
-
-```yaml
-on:
-  push:
-    branches:
-      - main
-      - develop
-      - staging
-```
+If you see old code being served:
+1. Hard refresh browser (`Ctrl+Shift+R`)
+2. Use incognito window
+3. Check if K8s is running latest image
+4. Purge Cloudflare cache if needed
 
 ## Troubleshooting
 
@@ -178,37 +127,75 @@ on:
 2. Use access token instead of password
 3. Check token has "Read & Write" permissions
 
-### Build Timeout
+### Build Failed
 
-**Error:** `The operation was canceled`
-
-**Solution:**
-1. Increase `timeout-minutes:` in workflow file
-2. Check for resource limits
-3. Verify network connectivity
-
-### Vulnerability Scan Failed
-
-**Error:** `Vulnerability scan failed`
+**Error:** Various build errors
 
 **Solution:**
-1. Check Trivy action version compatibility
-2. Review scan logs in Actions tab
-3. Update base image if vulnerabilities are critical
+1. Check the "Verify source code" step output in Actions
+2. Ensure `frontend/app.js` contains `getDisplayMedia`
+3. Review Dockerfile for syntax errors
+4. Check Go code compiles: `go build ./backend/main.go`
+
+### Old Code Still Being Served
+
+After successful build and deployment:
+
+1. **Check browser network tab** - should see `app.js?v=3.0.0`
+2. **Hard refresh**: `Ctrl+Shift+R` (Windows) or `Cmd+Shift+R` (Mac)
+3. **Verify pod is updated**:
+   ```bash
+   kubectl describe pod -n video-recorder -l app=video-recorder | grep Image
+   ```
+4. **Purge Cloudflare cache** if needed
+
+### Workflow Not Triggering
+
+**Solution:**
+1. Ensure workflow file is in `.github/workflows/`
+2. Check branch protection rules
+3. Verify the push is to `main` branch
+
+## Workflow File Details
+
+Key sections of `.github/workflows/docker-push.yml`:
+
+```yaml
+# Triggers
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Build settings
+- name: Build and push Docker image
+  uses: docker/build-push-action@v5
+  with:
+    context: .
+    push: ${{ github.event_name != 'pull_request' }}
+    tags: ${{ steps.meta.outputs.tags }}
+    no-cache: true        # Force fresh build
+    pull: true            # Pull latest base images
+```
 
 ## Best Practices
 
 1. **Use tags for releases**, not just `latest`
-2. **Monitor build times** and optimize with caching
-3. **Review security alerts** in GitHub Security tab
-4. **Keep secrets updated** and rotate regularly
-5. **Review workflow logs** for debugging
-6. **Use semantic versioning** (v1.0.0, v1.1.0, etc.)
-7. **Deploy to staging first** before production
+2. **Monitor build times** in Actions tab
+3. **Keep secrets updated** and rotate regularly
+4. **Review workflow logs** for debugging
+5. **Use semantic versioning** (v1.0.0, v1.1.0, etc.)
+6. **Test locally** before pushing:
+   ```bash
+   docker build -t recorder:test .
+   docker run -p 8080:8080 recorder:test
+   ```
 
 ## Additional Resources
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Docker Build Push Action](https://github.com/docker/build-push-action)
-- [Trivy Scanner](https://aquasecurity.github.io/trivy/)
 - [Docker Hub Access Tokens](https://docs.docker.com/security/for-developers/access-tokens/)

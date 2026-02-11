@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -588,11 +589,13 @@ func getClientIP(r *http.Request) string {
 	if xri != "" {
 		return xri
 	}
-	// Fall back to RemoteAddr
-	ip := r.RemoteAddr
-	// Remove port if present
-	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
-		ip = ip[:colonIdx]
+
+	// Fall back to RemoteAddr and handle both IPv4 and IPv6 safely.
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		// If parsing fails, return the raw value (it may already be just an IP).
+		return r.RemoteAddr
 	}
-	return ip
+
+	return host
 }

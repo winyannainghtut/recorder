@@ -1,5 +1,7 @@
 # Quick Deployment Guide
 
+> Current behavior: the upload/link flow has been removed. The app now records in the browser, mixes microphone and computer audio client-side, and downloads directly without server-side video storage. See `README.md` for the current endpoints and flow.
+
 This is a condensed version of README.md for quick reference.
 
 ## Prerequisites

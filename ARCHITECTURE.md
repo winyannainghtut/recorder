@@ -1,5 +1,7 @@
 # Architecture Explanation
 
+> Current behavior: the upload/link flow has been removed. The app now records in the browser, mixes microphone and computer audio client-side, and downloads directly without server-side video storage. See `README.md` for the current architecture summary.
+
 ## Design Philosophy
 
 This video recorder is built around three core principles:

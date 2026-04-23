@@ -3,8 +3,6 @@
 // UNIQUE_MARKER_2026_01_26_SCREEN_RECORD
 const MAX_RECORDING_DURATION = 3 * 60 * 60 * 1000; // 3 hours
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
-const UPLOAD_URL = '/upload';
-const API_BASE = window.location.origin;
 
 // ============================================================
 // WebM Duration Fix - Makes recordings seekable in VLC/players
@@ -20,7 +18,6 @@ const API_BASE = window.location.origin;
 async function fixWebmDuration(blob, duration) {
     try {
         const buffer = await blob.arrayBuffer();
-        const view = new DataView(buffer);
         
         // Find the Segment element and inject duration
         const fixedBuffer = injectDuration(buffer, duration);
@@ -240,8 +237,11 @@ let recordedChunks = [];
 let startTime = null;
 let timerInterval = null;
 let currentBlob = null;
-let downloadToken = null;
-let state = 'idle'; // idle, recording, stopped, uploading, ready, expired
+let recordingStream = null;
+let activeStreams = [];
+let audioContext = null;
+let audioSources = [];
+let state = 'idle'; // idle, recording, stopped, deleted
 
 // Elements
 const liveVideo = document.getElementById('liveVideo');
@@ -249,12 +249,12 @@ const recordedVideo = document.getElementById('recordedVideo');
 const idleControls = document.getElementById('idleControls');
 const recordingControls = document.getElementById('recordingControls');
 const previewControls = document.getElementById('previewControls');
-const uploadingControls = document.getElementById('uploadingControls');
-const downloadControls = document.getElementById('downloadControls');
-const expiredControls = document.getElementById('expiredControls');
+const deletedControls = document.getElementById('deletedControls');
 const timerDisplay = document.getElementById('timerDisplay');
 const message = document.getElementById('message');
-const downloadLink = document.getElementById('downloadLink');
+const stateTitle = document.getElementById('stateTitle');
+const statusPill = document.getElementById('statusPill');
+const videoFrame = document.getElementById('videoFrame');
 
 // Show message
 function showMessage(text, type = 'info') {
@@ -271,30 +271,31 @@ function setState(newState) {
     idleControls.classList.add('hidden');
     recordingControls.classList.add('hidden');
     previewControls.classList.add('hidden');
-    uploadingControls.classList.add('hidden');
-    downloadControls.classList.add('hidden');
-    expiredControls.classList.add('hidden');
+    deletedControls.classList.add('hidden');
+    videoFrame.dataset.state = newState;
 
     switch (newState) {
         case 'idle':
+            stateTitle.textContent = 'Ready';
+            statusPill.textContent = 'Idle';
             idleControls.classList.remove('hidden');
             liveVideo.style.display = 'block';
             recordedVideo.style.display = 'none';
             break;
         case 'recording':
+            stateTitle.textContent = 'Recording';
+            statusPill.textContent = 'Live';
             recordingControls.classList.remove('hidden');
             break;
         case 'stopped':
+            stateTitle.textContent = 'Preview';
+            statusPill.textContent = 'Ready';
             previewControls.classList.remove('hidden');
             break;
-        case 'uploading':
-            uploadingControls.classList.remove('hidden');
-            break;
-        case 'ready':
-            downloadControls.classList.remove('hidden');
-            break;
-        case 'expired':
-            expiredControls.classList.remove('hidden');
+        case 'deleted':
+            stateTitle.textContent = 'Deleted';
+            statusPill.textContent = 'Reset';
+            deletedControls.classList.remove('hidden');
             break;
     }
 }
@@ -305,6 +306,53 @@ function formatTime(ms) {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+async function createRecordingStream(displayStream, micStream) {
+    const videoTracks = displayStream.getVideoTracks();
+    const audioStreams = [];
+
+    if (displayStream.getAudioTracks().length > 0) {
+        audioStreams.push(new MediaStream(displayStream.getAudioTracks()));
+    }
+
+    if (micStream && micStream.getAudioTracks().length > 0) {
+        audioStreams.push(new MediaStream(micStream.getAudioTracks()));
+    }
+
+    if (audioStreams.length === 0) {
+        return new MediaStream(videoTracks);
+    }
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+        const audioTracks = audioStreams.flatMap(stream => stream.getAudioTracks());
+        return new MediaStream([...videoTracks, ...audioTracks]);
+    }
+
+    audioContext = new AudioContextClass();
+    const destination = audioContext.createMediaStreamDestination();
+    audioSources = audioStreams.map((stream) => {
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(destination);
+        return source;
+    });
+
+    if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+    }
+
+    return new MediaStream([...videoTracks, ...destination.stream.getAudioTracks()]);
+}
+
+function getSupportedMimeType() {
+    const mimeTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+    ];
+
+    return mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
 }
 
 // Start recording
@@ -318,35 +366,33 @@ async function startRecording() {
                 height: { ideal: 1080 },
                 frameRate: { ideal: 30 }
             },
-            audio: true  // Capture system audio if supported
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            },
+            systemAudio: 'include'
         });
 
         // Try to get microphone audio separately for better compatibility
         let audioStream = null;
         try {
             audioStream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
                 video: false
             });
         } catch (audioError) {
             console.log('Microphone not available, using display audio only');
         }
 
-        // Combine streams if we have both
-        let combinedStream;
-        if (audioStream) {
-            const audioTracks = audioStream.getAudioTracks();
-            const displayAudioTracks = displayStream.getAudioTracks();
-            combinedStream = new MediaStream([
-                ...displayStream.getVideoTracks(),
-                ...displayAudioTracks,
-                ...audioTracks
-            ]);
-        } else {
-            combinedStream = displayStream;
-        }
+        activeStreams = [displayStream, audioStream].filter(Boolean);
+        recordingStream = await createRecordingStream(displayStream, audioStream);
 
-        liveVideo.srcObject = combinedStream;
+        liveVideo.srcObject = recordingStream;
 
         // Handle when user stops sharing via browser UI
         displayStream.getVideoTracks()[0].onended = () => {
@@ -357,9 +403,8 @@ async function startRecording() {
         };
 
         recordedChunks = [];
-        mediaRecorder = new MediaRecorder(combinedStream, {
-            mimeType: 'video/webm;codecs=vp9'
-        });
+        const mimeType = getSupportedMimeType();
+        mediaRecorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : undefined);
 
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
@@ -418,6 +463,7 @@ async function startRecording() {
         }, MAX_RECORDING_DURATION);
 
     } catch (error) {
+        stopStream();
         console.error('Error starting recording:', error);
         if (error.name === 'NotAllowedError') {
             showMessage('Screen sharing was cancelled or denied.', 'error');
@@ -437,10 +483,25 @@ function stopRecording() {
 
 // Stop media stream
 function stopStream() {
-    if (liveVideo.srcObject) {
-        liveVideo.srcObject.getTracks().forEach(track => track.stop());
-        liveVideo.srcObject = null;
+    activeStreams.forEach(stream => {
+        stream.getTracks().forEach(track => track.stop());
+    });
+    activeStreams = [];
+
+    if (recordingStream) {
+        recordingStream.getTracks().forEach(track => track.stop());
+        recordingStream = null;
     }
+
+    audioSources.forEach(source => source.disconnect());
+    audioSources = [];
+
+    if (audioContext) {
+        audioContext.close().catch(() => {});
+        audioContext = null;
+    }
+
+    liveVideo.srcObject = null;
 }
 
 // Update timer
@@ -458,7 +519,7 @@ function formatBytes(bytes) {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
-// Direct download (no server upload)
+// Direct download
 function directDownload() {
     if (!currentBlob) {
         showMessage('No recording to download', 'error');
@@ -480,50 +541,13 @@ function directDownload() {
     showMessage('Download started!', 'success');
 }
 
-// Upload recording
-async function uploadRecording() {
-    if (!currentBlob) {
-        showMessage('No recording to upload', 'error');
-        return;
-    }
-
-    setState('uploading');
-
-    try {
-        const formData = new FormData();
-        formData.append('video', currentBlob, 'recording.webm');
-
-        const response = await fetch(UPLOAD_URL, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Upload failed');
-        }
-
-        const data = await response.json();
-        downloadToken = data.token;
-        downloadLink.href = `/download/${downloadToken}`;
-        showMessage('Upload successful! Download ready.', 'success');
-        setState('ready');
-
-    } catch (error) {
-        console.error('Upload error:', error);
-        showMessage(`Upload failed: ${error.message}`, 'error');
-        setState('stopped');
-    }
-}
-
 // Delete recording
 function deleteRecording() {
     currentBlob = null;
     recordedChunks = [];
     recordedVideo.src = '';
-    downloadToken = null;
     showMessage('Recording deleted', 'info');
-    setState('expired');
+    setState('deleted');
 }
 
 // Reset
@@ -531,7 +555,6 @@ function reset() {
     currentBlob = null;
     recordedChunks = [];
     recordedVideo.src = '';
-    downloadToken = null;
     liveVideo.style.display = 'block';
     recordedVideo.style.display = 'none';
     setState('idle');
@@ -549,7 +572,6 @@ document.getElementById('recordAgainBtn').addEventListener('click', () => {
     setState('idle');
 });
 document.getElementById('directDownloadBtn').addEventListener('click', directDownload);
-document.getElementById('uploadBtn').addEventListener('click', uploadRecording);
 document.getElementById('deleteBtn').addEventListener('click', deleteRecording);
 document.getElementById('resetBtn').addEventListener('click', reset);
 

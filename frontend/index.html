@@ -4,116 +4,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Screen Recorder</title>
-    <link rel="stylesheet" href="styles.css?v=3.2.0">
+    <link rel="stylesheet" href="styles.css?v=3.3.0">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Web Screen Recorder</h1>
-            <p class="subtitle">Record your screen, upload, download - temporary storage only</p>
+    <div class="page-shell">
+        <header class="site-header" aria-label="Application header">
+            <a class="brand" href="/" aria-label="Screen Recorder home">
+                <span class="brand-mark" aria-hidden="true"></span>
+                <span>Screen Recorder</span>
+            </a>
+            <a class="logout-link" href="/auth/logout">Sign out</a>
         </header>
 
-        <div class="video-section">
-            <div class="video-container">
-                <video id="liveVideo" autoplay muted playsinline></video>
-                <video id="recordedVideo" controls></video>
-            </div>
-        </div>
-
-        <div class="controls">
-            <div id="idleControls" class="control-group">
-                <button id="startBtn" class="btn btn-primary">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="12" cy="12" r="10"/>
-                    </svg>
-                    Start Recording
-                </button>
-            </div>
-
-            <div id="recordingControls" class="control-group hidden">
-                <div class="timer">
-                    <span id="timerDisplay">00:00</span>
+        <main class="hero-layout">
+            <section class="hero-copy" aria-labelledby="pageTitle">
+                <p class="eyebrow">Browser recorder</p>
+                <h1 id="pageTitle">Record. Review. Download.</h1>
+                <p class="hero-text">A focused screen recorder for local WebM downloads with microphone and computer audio mixed in one file.</p>
+                <div class="proof-row" aria-label="Recording properties">
+                    <span>Local file</span>
+                    <span>Mixed audio</span>
+                    <span>No server upload</span>
                 </div>
-                <button id="stopBtn" class="btn btn-danger">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="6" width="12" height="12" rx="2"/>
-                    </svg>
-                    Stop Recording
-                </button>
-            </div>
+            </section>
 
-            <div id="previewControls" class="control-group hidden">
-                <div class="preview-info">
-                    <span id="fileSizeDisplay"></span>
+            <section class="recorder-panel" aria-label="Screen recorder">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">Recorder</p>
+                        <h2 id="stateTitle">Ready</h2>
+                    </div>
+                    <div class="status-pill" id="statusPill">Idle</div>
                 </div>
-                <div class="button-row">
-                    <button id="directDownloadBtn" class="btn btn-success">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                            <polyline points="7,10 12,15 17,10"/>
-                            <line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                        Download Now
-                    </button>
-                    <button id="uploadBtn" class="btn btn-primary">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                            <polyline points="17,8 12,3 7,8"/>
-                            <line x1="12" y1="3" x2="12" y2="15"/>
-                        </svg>
-                        Upload for Link
-                    </button>
-                </div>
-                <button id="recordAgainBtn" class="btn btn-secondary btn-small">
-                    Record Again
-                </button>
-            </div>
 
-            <div id="uploadingControls" class="control-group hidden">
-                <div class="progress">
-                    <div class="spinner"></div>
-                    <span>Uploading...</span>
+                <div class="video-container" id="videoFrame" data-state="idle">
+                    <video id="liveVideo" autoplay muted playsinline></video>
+                    <video id="recordedVideo" controls></video>
                 </div>
-            </div>
 
-            <div id="downloadControls" class="control-group hidden">
-                <div class="info">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    </svg>
-                    <span>Secure one-time download ready</span>
+                <div class="controls">
+                    <div id="idleControls" class="control-group">
+                        <button id="startBtn" class="btn btn-primary">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <circle cx="12" cy="12" r="8"/>
+                            </svg>
+                            Start Recording
+                        </button>
+                    </div>
+
+                    <div id="recordingControls" class="control-group hidden">
+                        <div class="timer" aria-live="polite">
+                            <span id="timerDisplay">00:00</span>
+                        </div>
+                        <button id="stopBtn" class="btn btn-danger">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <rect x="7" y="7" width="10" height="10" rx="1"/>
+                            </svg>
+                            Stop Recording
+                        </button>
+                    </div>
+
+                    <div id="previewControls" class="control-group hidden">
+                        <div class="preview-info">
+                            <span id="fileSizeDisplay"></span>
+                        </div>
+                        <div class="button-row">
+                            <button id="directDownloadBtn" class="btn btn-primary">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7,10 12,15 17,10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                Download Now
+                            </button>
+                            <button id="recordAgainBtn" class="btn btn-secondary">
+                                Record Again
+                            </button>
+                            <button id="deleteBtn" class="btn btn-ghost">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="deletedControls" class="control-group hidden">
+                        <div class="info info-warning">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <span>Recording deleted</span>
+                        </div>
+                        <button id="resetBtn" class="btn btn-secondary">
+                            Record New Screen
+                        </button>
+                    </div>
                 </div>
-                <a id="downloadLink" class="btn btn-success" href="#">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7,10 12,15 17,10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Download Video
-                </a>
-                <button id="deleteBtn" class="btn btn-danger-small">
-                    Delete
-                </button>
-            </div>
+            </section>
+        </main>
 
-            <div id="expiredControls" class="control-group hidden">
-                <div class="info info-warning">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="12" y1="8" x2="12" y2="12"/>
-                        <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>
-                    <span>Download expired or deleted</span>
-                </div>
-                <button id="resetBtn" class="btn btn-secondary">
-                    Record New Screen
-                </button>
-            </div>
-        </div>
-
-        <div id="message" class="message hidden"></div>
+        <div id="message" class="message hidden" role="status" aria-live="polite"></div>
     </div>
 
-    <script src="app.js?v=3.2.0"></script>
+    <script src="app.js?v=3.3.0"></script>
 </body>
 </html>

@@ -1,5 +1,7 @@
 # How to Use - Complete Setup Guide
 
+> Current behavior: the upload/link flow has been removed. The app now records in the browser, mixes microphone and computer audio client-side, and downloads directly without server-side video storage. See `README.md` for the current flow.
+
 This is a comprehensive step-by-step guide to set up the Screen Recorder application from scratch.
 
 ## Table of Contents

@@ -1,5 +1,7 @@
 # Project Summary: Lightweight Video Recorder for Kubernetes
 
+> Current behavior: the upload/link flow has been removed. The app now records in the browser, mixes microphone and computer audio client-side, and downloads directly without server-side video storage. See `README.md` for the current summary.
+
 ## What Was Built
 
 A production-ready, ultra-lightweight web-based video recorder application designed specifically for Kubernetes deployment with minimal resource usage.

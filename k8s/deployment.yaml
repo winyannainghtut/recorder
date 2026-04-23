@@ -34,7 +34,7 @@ spec:
               name: recorder-auth
               key: login-password
 
-        # Resource limits - increased for large file handling
+        # Resource limits
         resources:
           requests:
             memory: "128Mi"
@@ -73,18 +73,7 @@ spec:
         # Security context for container
         securityContext:
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false  # False because we need /tmp write access
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
             - ALL
-
-        # Volume mounts
-        volumeMounts:
-        - name: tmp-videos
-          mountPath: /tmp/videos
-
-      # Volumes
-      volumes:
-      - name: tmp-videos
-        emptyDir:
-          sizeLimit: "5Gi"  # Increased for 3-hour recordings (up to 2GB each)

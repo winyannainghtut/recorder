@@ -241,6 +241,7 @@ let recordingStream = null;
 let activeStreams = [];
 let audioContext = null;
 let audioSources = [];
+let audioNodes = [];
 let state = 'idle'; // idle, recording, stopped, deleted
 
 // Elements
@@ -308,35 +309,51 @@ function formatTime(ms) {
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+function createAudioSourceNode(stream, gainValue, destination) {
+    const source = audioContext.createMediaStreamSource(stream);
+    const gain = audioContext.createGain();
+
+    gain.gain.value = gainValue;
+    source.connect(gain);
+    gain.connect(destination);
+
+    audioSources.push(source);
+    audioNodes.push(gain);
+}
+
 async function createRecordingStream(displayStream, micStream) {
     const videoTracks = displayStream.getVideoTracks();
-    const audioStreams = [];
+    const displayAudioTracks = displayStream.getAudioTracks();
+    const micAudioTracks = micStream ? micStream.getAudioTracks() : [];
 
-    if (displayStream.getAudioTracks().length > 0) {
-        audioStreams.push(new MediaStream(displayStream.getAudioTracks()));
-    }
-
-    if (micStream && micStream.getAudioTracks().length > 0) {
-        audioStreams.push(new MediaStream(micStream.getAudioTracks()));
-    }
-
-    if (audioStreams.length === 0) {
+    if (displayAudioTracks.length === 0 && micAudioTracks.length === 0) {
         return new MediaStream(videoTracks);
     }
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) {
-        const audioTracks = audioStreams.flatMap(stream => stream.getAudioTracks());
-        return new MediaStream([...videoTracks, ...audioTracks]);
+        return new MediaStream([...videoTracks, ...displayAudioTracks, ...micAudioTracks]);
     }
 
-    audioContext = new AudioContextClass();
+    audioContext = new AudioContextClass({ sampleRate: 48000 });
     const destination = audioContext.createMediaStreamDestination();
-    audioSources = audioStreams.map((stream) => {
-        const source = audioContext.createMediaStreamSource(stream);
-        source.connect(destination);
-        return source;
-    });
+    const compressor = audioContext.createDynamicsCompressor();
+
+    compressor.threshold.value = -18;
+    compressor.knee.value = 24;
+    compressor.ratio.value = 3;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    compressor.connect(destination);
+    audioNodes.push(compressor);
+
+    if (displayAudioTracks.length > 0) {
+        createAudioSourceNode(new MediaStream(displayAudioTracks), 0.9, compressor);
+    }
+
+    if (micAudioTracks.length > 0) {
+        createAudioSourceNode(new MediaStream(micAudioTracks), 1.15, compressor);
+    }
 
     if (audioContext.state === 'suspended') {
         await audioContext.resume();
@@ -355,6 +372,34 @@ function getSupportedMimeType() {
     return mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
 }
 
+function describeAudioSources(displayStream, micStream) {
+    const displayAudioCount = displayStream.getAudioTracks().length;
+    const micAudioCount = micStream ? micStream.getAudioTracks().length : 0;
+
+    if (displayAudioCount > 0 && micAudioCount > 0) {
+        return 'Recording microphone and computer audio';
+    }
+
+    if (displayAudioCount > 0) {
+        return 'Recording computer audio only';
+    }
+
+    if (micAudioCount > 0) {
+        return 'Recording microphone audio only';
+    }
+
+    return 'Recording video without audio';
+}
+
+function logAudioTrackSettings(label, stream) {
+    stream.getAudioTracks().forEach((track, index) => {
+        console.log(`${label} audio track ${index + 1}`, {
+            label: track.label,
+            settings: track.getSettings()
+        });
+    });
+}
+
 // Start recording
 async function startRecording() {
     try {
@@ -369,7 +414,9 @@ async function startRecording() {
             audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
-                autoGainControl: false
+                autoGainControl: false,
+                restrictOwnAudio: false,
+                suppressLocalAudioPlayback: false
             },
             systemAudio: 'include'
         });
@@ -379,9 +426,11 @@ async function startRecording() {
         try {
             audioStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    channelCount: 1,
+                    sampleRate: 48000
                 },
                 video: false
             });
@@ -391,6 +440,10 @@ async function startRecording() {
 
         activeStreams = [displayStream, audioStream].filter(Boolean);
         recordingStream = await createRecordingStream(displayStream, audioStream);
+        logAudioTrackSettings('Display', displayStream);
+        if (audioStream) {
+            logAudioTrackSettings('Microphone', audioStream);
+        }
 
         liveVideo.srcObject = recordingStream;
 
@@ -453,6 +506,7 @@ async function startRecording() {
         timerInterval = setInterval(updateTimer, 1000);
         updateTimer();
         setState('recording');
+        showMessage(describeAudioSources(displayStream, audioStream), 'info');
 
         // Auto-stop after max duration
         setTimeout(() => {
@@ -495,6 +549,8 @@ function stopStream() {
 
     audioSources.forEach(source => source.disconnect());
     audioSources = [];
+    audioNodes.forEach(node => node.disconnect());
+    audioNodes = [];
 
     if (audioContext) {
         audioContext.close().catch(() => {});
